@@ -258,8 +258,7 @@ class SquareClient():
         body = {
             "query": {
                 "filter": {
-                    "location_ids": location_ids,
-                    "status": "ACTIVE"
+                    "location_ids": location_ids
                 }
             },
             "limit": 200

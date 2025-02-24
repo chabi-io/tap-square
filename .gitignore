@@ -101,3 +101,4 @@ ENV/
 env.sh
 config.json
 .autoenv.zsh
+.idea
