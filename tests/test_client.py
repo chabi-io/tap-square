@@ -176,7 +176,7 @@ class TestClient():
     @backoff.on_exception(
         backoff.expo,
         RetryableError,
-        max_time=180, # seconds
+        max_time=600, # seconds
         on_backoff=log_backoff,
         jitter=backoff.full_jitter,
     )
@@ -450,7 +450,7 @@ class TestClient():
     @backoff.on_exception(
         backoff.expo,
         requests.exceptions.RequestException,
-        max_time=180, # seconds
+        max_time=600, # seconds
         on_backoff=log_backoff,
         jitter=backoff.full_jitter,
     )
@@ -549,7 +549,7 @@ class TestClient():
     @backoff.on_exception(
         backoff.expo,
         RuntimeError,
-        max_time=60, # seconds
+        max_time=600, # seconds
         jitter=backoff.full_jitter,
         on_backoff=log_backoff,
     )
@@ -1508,7 +1508,7 @@ class TestClient():
     @backoff.on_exception(
         backoff.expo,
         requests.exceptions.RequestException,
-        max_time=120, # seconds
+        max_time=600, # seconds
         jitter=backoff.full_jitter,
         on_backoff=log_backoff,
     )

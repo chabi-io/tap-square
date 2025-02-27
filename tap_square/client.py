@@ -129,7 +129,7 @@ class SquareClient():
     @backoff.on_exception(
         backoff.expo,
         RetryableError,
-        max_time=180, # seconds
+        max_time=600, # seconds
         giveup=should_not_retry,
         on_backoff=log_backoff,
         jitter=backoff.full_jitter,
@@ -405,7 +405,7 @@ class SquareClient():
     @backoff.on_exception(
         backoff.expo,
         requests.exceptions.RequestException,
-        max_time=180, # seconds
+        max_time=600, # seconds
         giveup=should_not_retry,
         on_backoff=log_backoff,
         jitter=backoff.full_jitter,
