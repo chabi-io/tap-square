@@ -192,7 +192,8 @@ class Payments(Stream):
     def sync(self, state, stream_schema, stream_metadata, config, transformer):
         bookmarked_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
         max_bookmark_value = bookmarked_time
-        all_location_ids = Locations.get_all_location_ids(self.client)
+        all_location_ids = Locations.get_all_location_ids(self.client) if config.get('location_ids', None) is None else config['location_ids']
+        LOGGER.info("doing Payments for %s locations", len(all_location_ids))
 
         for location_id in all_location_ids:
             for page, _ in self.client.get_payments(location_id, bookmarked_time, bookmarked_cursor=None):
@@ -221,7 +222,8 @@ class Orders(Stream):
     def sync(self, state, stream_schema, stream_metadata, config, transformer):
         start_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
         max_record_value = start_time
-        all_location_ids = Locations.get_all_location_ids(self.client)
+        all_location_ids = Locations.get_all_location_ids(self.client) if config.get('location_ids', None) is None else config['location_ids']
+        LOGGER.info("doing Orders for %s locations", len(all_location_ids))
 
         for location_ids_chunk in chunks(all_location_ids, 10):
             # orders requests can only take up to 10 location_ids at a time
@@ -342,7 +344,8 @@ class TeamMembers(Stream):
     def sync(self, state, stream_schema, stream_metadata, config, transformer):
         start_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
         max_record_value = start_time
-        all_location_ids = Locations.get_all_location_ids(self.client)
+        all_location_ids = Locations.get_all_location_ids(self.client) if config.get('location_ids', None) is None else config['location_ids']
+        LOGGER.info("doing TeamMembers for %s locations", len(all_location_ids))
 
         for page, _ in self.client.get_team_members(all_location_ids):
             for record in page:
