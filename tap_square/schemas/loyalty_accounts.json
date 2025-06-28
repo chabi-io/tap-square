@@ -1,0 +1,108 @@
+{
+  "type": [
+    "null",
+    "object"
+  ],
+  "properties": {
+    "id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "program_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "balance": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "lifetime_points": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "customer_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "enrolled_at": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "updated_at": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "mapping": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "phone_number": {
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      }
+    },
+    "expiring_point_deadlines": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ],
+        "properties": {
+          "points": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "expires_at": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

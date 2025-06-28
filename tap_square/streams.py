@@ -307,6 +307,59 @@ class Shifts(FullTableStream):
         return state
 
 
+class LoyaltyAccounts(FullTableStream):
+    tap_stream_id = 'loyalty_accounts'
+    key_properties = ['id']
+    replication_method = 'INCREMENTAL'
+    valid_replication_keys = ['updated_at']
+    replication_key = 'updated_at'
+
+    def get_pages(self, bookmarked_cursor, start_time):
+        yield from self.client.get_loyalty_accounts(bookmarked_cursor)
+
+    def sync(self, state, stream_schema, stream_metadata, config, transformer):
+        start_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
+
+        sync_start_bookmark = singer.get_bookmark(
+            state,
+            self.tap_stream_id,
+            'sync_start',
+            singer.utils.strftime(singer.utils.now(),
+                                  format_str=singer.utils.DATETIME_PARSE)
+        )
+        state = singer.write_bookmark(
+            state,
+            self.tap_stream_id,
+            'sync_start',
+            sync_start_bookmark,
+        )
+
+        bookmarked_cursor = singer.get_bookmark(state, self.tap_stream_id, 'cursor')
+
+        for page, cursor in self.get_pages_safe(state, bookmarked_cursor, start_time):
+            for record in page:
+                if record[self.replication_key] >= start_time:
+                    transformed_record = transformer.transform(
+                        record, stream_schema, stream_metadata,
+                    )
+                    singer.write_record(
+                        self.tap_stream_id,
+                        transformed_record,
+                    )
+            state = singer.write_bookmark(state, self.tap_stream_id, 'cursor', cursor)
+            singer.write_state(state)
+
+        state = singer.clear_bookmark(state, self.tap_stream_id, 'sync_start')
+        state = singer.clear_bookmark(state, self.tap_stream_id, 'cursor')
+        state = singer.write_bookmark(
+            state,
+            self.tap_stream_id,
+            self.replication_key,
+            sync_start_bookmark,
+        )
+        singer.write_state(state)
+        return state
+
 
 class CashDrawerShifts(FullTableStream):
     tap_stream_id = 'cash_drawer_shifts'
@@ -397,5 +450,6 @@ STREAMS = {
     'shifts': Shifts,
     'cash_drawer_shifts': CashDrawerShifts,
     'team_members': TeamMembers,
-    'customers': Customers
+    'customers': Customers,
+    'loyalty_accounts': LoyaltyAccounts
 }

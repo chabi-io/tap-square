@@ -300,6 +300,22 @@ class SquareClient():
             body,
             'shifts')
 
+
+    def get_loyalty_accounts(self, bookmarked_cursor):
+        body = {
+            "limit": 200
+        }
+
+        if bookmarked_cursor:
+            body['cursor'] = bookmarked_cursor
+
+        yield from self._get_v2_objects(
+            'loyalty_accounts',
+            lambda bdy: self._client.loyalty.search_loyalty_accounts(body=bdy),
+            body,
+            'loyalty_accounts')
+
+
     def get_refunds(self, start_time, bookmarked_cursor):
         start_time = utils.strptime_to_utc(start_time)
         start_time = start_time - timedelta(milliseconds=1)
