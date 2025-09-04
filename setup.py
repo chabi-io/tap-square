@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(name='tap-square',
-      version='2.3.1',
+      version='2.3.2',
       description='Singer.io tap for extracting data from the Square API',
       author='Stitch',
       url='http://singer.io',
@@ -18,7 +18,7 @@ setup(name='tap-square',
       extras_require={
           'dev': [
               'ipdb',
-              'pylint==2.5.3',
+              'pylint',
           ]
       },
       entry_points='''
