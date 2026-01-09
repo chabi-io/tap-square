@@ -215,10 +215,6 @@ class SquareClient():
                         "start_at": start_time, # Inclusive on start_at
                         'end_at': end_time      # Exclusive on end_at
                     }
-                },
-                'sort': {
-                    'field': 'CREATED_AT',
-                    'order': 'ASC'
                 }
             }
         }
