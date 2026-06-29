@@ -164,16 +164,34 @@ class BankAccounts(FullTableStream):
         yield from self.client.get_bank_accounts()
 
 
-class Refunds(FullTableStream):
+class Refunds(Stream):
     tap_stream_id = 'refunds'
     key_properties = ['id']
-    replication_method = 'FULL_TABLE'
-    valid_replication_keys = []
-    replication_key = None
+    replication_method = 'INCREMENTAL'
+    valid_replication_keys = ['updated_at']
+    replication_key = 'updated_at'
     object_type = 'REFUND'
 
-    def get_pages(self, bookmarked_cursor, start_time):
-        yield from self.client.get_refunds(start_time, bookmarked_cursor)
+    def sync(self, state, stream_schema, stream_metadata, config, transformer):
+        start_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
+        max_record_value = start_time
+
+        # ListPaymentRefunds supports filtering and sorting by `updated_at`, so the
+        # client requests records sorted ascending by `updated_at`; writing the
+        # running-max bookmark after each page is safe for mid-sync resumption.
+        for page, _ in self.client.get_refunds(start_time):
+            for record in page:
+                transformed_record = transformer.transform(record, stream_schema, stream_metadata)
+                singer.write_record(
+                    self.tap_stream_id,
+                    transformed_record,
+                )
+                if record[self.replication_key] > max_record_value:
+                    max_record_value = transformed_record[self.replication_key]
+
+            state = singer.write_bookmark(state, self.tap_stream_id, self.replication_key, max_record_value)
+            singer.write_state(state)
+        return state
 
 
 class Payments(Stream):
@@ -251,57 +269,38 @@ class Inventories(FullTableStream):
         yield from self.client.get_inventories(start_time, bookmarked_cursor)
 
 
-class Shifts(FullTableStream):
-    tap_stream_id = 'shifts'
+class Timecards(Stream):
+    '''
+    Labor API Timecards. This replaces the retired Shifts stream (Square retired the
+    Shifts API on 2026-05-21). SearchTimecards returns the same underlying resources
+    (same record IDs) as the old SearchShifts endpoint.
+
+    Records are returned sorted ascending by `updated_at`, so writing the running-max
+    `updated_at` bookmark after each page is safe for mid-sync resumption.
+    '''
+    tap_stream_id = 'timecards'
     key_properties = ['id']
     replication_method = 'INCREMENTAL'
     valid_replication_keys = ['updated_at']
     replication_key = 'updated_at'
 
-    def get_pages(self, bookmarked_cursor, start_time):
-        yield from self.client.get_shifts(bookmarked_cursor)
-
     def sync(self, state, stream_schema, stream_metadata, config, transformer):
         start_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
+        max_record_value = start_time
 
-        sync_start_bookmark = singer.get_bookmark(
-            state,
-            self.tap_stream_id,
-            'sync_start',
-            singer.utils.strftime(singer.utils.now(),
-                                  format_str=singer.utils.DATETIME_PARSE)
-        )
-        state = singer.write_bookmark(
-            state,
-            self.tap_stream_id,
-            'sync_start',
-            sync_start_bookmark,
-        )
-
-        bookmarked_cursor = singer.get_bookmark(state, self.tap_stream_id, 'cursor')
-
-        for page, cursor in self.get_pages_safe(state, bookmarked_cursor, start_time):
+        for page, _ in self.client.get_timecards():
             for record in page:
                 if record[self.replication_key] >= start_time:
-                    transformed_record = transformer.transform(
-                        record, stream_schema, stream_metadata,
-                    )
+                    transformed_record = transformer.transform(record, stream_schema, stream_metadata)
                     singer.write_record(
                         self.tap_stream_id,
                         transformed_record,
                     )
-            state = singer.write_bookmark(state, self.tap_stream_id, 'cursor', cursor)
-            singer.write_state(state)
+                    if record[self.replication_key] > max_record_value:
+                        max_record_value = transformed_record[self.replication_key]
 
-        state = singer.clear_bookmark(state, self.tap_stream_id, 'sync_start')
-        state = singer.clear_bookmark(state, self.tap_stream_id, 'cursor')
-        state = singer.write_bookmark(
-            state,
-            self.tap_stream_id,
-            self.replication_key,
-            sync_start_bookmark,
-        )
-        singer.write_state(state)
+            state = singer.write_bookmark(state, self.tap_stream_id, self.replication_key, max_record_value)
+            singer.write_state(state)
         return state
 
 
@@ -445,7 +444,7 @@ STREAMS = {
     'modifier_lists': ModifierLists,
     'inventories': Inventories,
     'orders': Orders,
-    'shifts': Shifts,
+    'timecards': Timecards,
     'cash_drawer_shifts': CashDrawerShifts,
     'team_members': TeamMembers,
     'customers': Customers,

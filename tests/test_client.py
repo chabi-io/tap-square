@@ -7,7 +7,7 @@ import requests
 
 import backoff
 import singer
-from square.client import Client
+from square_legacy.client import Client
 LOGGER = singer.get_logger()
 
 LOGGER = singer.get_logger()
@@ -72,10 +72,6 @@ class RetryableError(RuntimeError):
 
 
 class TestClient():
-    # This is the duration of a shift, we make this constant so we can
-    # ensure the shifts don't overlap
-    SHIFT_MINUTES = 10
-
     """
     Client used to perfrom GET, CREATE and UPDATE on streams.
     """
@@ -304,25 +300,6 @@ class TestClient():
             body,
             'counts')
 
-    def get_shifts(self, bookmarked_cursor):
-        body = {
-            "query": {
-                "sort": {
-                    "field": "UPDATED_AT",
-                    "order": "ASC"
-                }
-            }
-        }
-
-        if bookmarked_cursor:
-            body['cursor'] = bookmarked_cursor
-
-        yield from self._get_v2_objects(
-            'shifts',
-            lambda bdy: self._client.labor.search_shifts(body=bdy),
-            body,
-            'shifts')
-
     def get_refunds(self, start_time, bookmarked_cursor):  # TODO:check sort_order input
         start_time = singer.utils.strptime_to_utc(start_time)
         start_time = start_time - timedelta(milliseconds=1)
@@ -517,9 +494,6 @@ class TestClient():
             return [obj for page, _ in self.get_inventories(start_date, None) for obj in page]
         elif stream == 'orders':
             return [obj for page, _ in self.get_orders_pages(start_date, None) for obj in page]
-        elif stream == 'shifts':
-            return [obj for page, _ in self.get_shifts(None) for obj in page
-                    if obj['updated_at'] >= start_date]
         elif stream == 'cash_drawer_shifts':
             return [obj for page, _ in self.get_cds_pages(start_date, None) for obj in page]
         elif stream == 'customers':
@@ -536,13 +510,6 @@ class TestClient():
             return next(self.get_inventories(start_date, None))
         elif stream == 'payments':
             return next(self.get_payments(start_date, None))
-        elif stream == 'shifts':
-            shifts, cursor = next(self.get_shifts(None))
-            shifts_after_start_date = [
-                shift for shift in shifts
-                if not start_date or shift['updated_at'] >= start_date
-            ]
-            return shifts_after_start_date, cursor
         else:
             raise NotImplementedError("Not implemented for stream {}".format(stream))
 
@@ -664,8 +631,6 @@ class TestClient():
             return self.create_refunds(start_date=start_date, num_records=num_records)
         elif stream == 'payments':
             return self.create_payments(num_records)
-        elif stream == 'shifts':
-            return self.create_shift(start_date, end_date, num_records)
         elif stream == 'customers':
             return self.create_customers(num_records)
         else:
@@ -678,12 +643,6 @@ class TestClient():
             return all_found[0]
 
         return self.create(stream, start_date)[0]
-
-    @staticmethod
-    def shift_date(date_string, shift_minutes):
-        date_parsed = singer.utils.strptime_with_tz(date_string)
-        date_datetime = date_parsed + timedelta(minutes=shift_minutes)
-        return singer.utils.strftime(date_datetime)
 
     @staticmethod
     def make_id(stream):
@@ -1182,60 +1141,6 @@ class TestClient():
 
         return created_orders
 
-    def create_shift(self, start_date, end_date, num_records):
-        team_member_id = self.get_or_create_first_found('team_members', None)['id']
-
-        all_location_ids = [location['id'] for location in self.get_all('locations', start_date)]
-        all_shifts = self.get_all('shifts', start_date)
-
-        max_end_at = max([obj['end_at'] for obj in all_shifts]) if all_shifts else start_date
-        if start_date < max_end_at:
-            LOGGER.warning('Tried to create a Shift that overlapped another shift')
-
-        start_at = max_end_at
-        end_at = self.shift_date(start_at, self.SHIFT_MINUTES) if not end_date else end_date
-
-        created_shifts = []
-        for _ in range(num_records):
-            location_id = random.choice(all_location_ids)
-            body = {
-                'idempotency_key': str(uuid.uuid4()),
-                'shift': {
-                    'team_member_id': team_member_id,
-                    'location_id': location_id,
-                    'start_at': start_at, # This can probably be derived from the test's start date
-                    'end_at': end_at,
-                    'breaks': [{
-                        "start_at": self.shift_date(start_at, 1),
-                        "end_at": self.shift_date(start_at, 2),
-                        "name": "Tea Break",
-                        "expected_duration": "PT5M",
-                        "break_type_id": self.make_id('shift.break'),
-                        "is_paid": True
-                    }],
-                    'wage': {
-                        'title': self.make_id('shift'),
-                        'hourly_rate': {
-                            'amount_money': 1100,
-                            'currency': 'USD'
-                        }
-                    }
-                }
-            }
-
-            resp = self._client.labor.create_shift(body=body)
-            if resp.is_error():
-                raise RuntimeError(resp.errors)
-            LOGGER.info('Created a Shift with id %s', resp.body.get('shift', {}).get('id'))
-
-            created_shifts.append(resp.body.get('shift'))
-
-            start_at = end_at
-            # Bump by shift minutes to avoid any shift overlaps
-            end_at = self.shift_date(start_at, self.SHIFT_MINUTES)
-
-        return created_shifts
-
     ##########################################################################
     ### UPDATEs
     ##########################################################################
@@ -1265,8 +1170,6 @@ class TestClient():
             return [self.update_order(obj).body.get('order')]
         elif stream == 'payments':
             return [self.update_payment(obj_id)]
-        elif stream == 'shifts':
-            return [self.update_shift(obj).body.get('shift')]
         elif stream == 'customers':
             return [self.update_customer(obj_id)]
         else:
@@ -1421,26 +1324,6 @@ class TestClient():
         assert (len(all_counts) == 1), "len(all_counts)={}, all_counts={}, len(all_counts) should be 1".format(len(all_counts), all_counts)
 
         return all_counts
-
-    def update_shift(self, obj):
-        body = {
-            "shift": {
-                "employee_id": obj['employee_id'],
-                "location_id": obj['location_id'],
-                "start_at": obj['start_at'],
-                "end_at": obj['end_at'],
-                "wage": {
-                    "title": self.make_id('shift'),
-                    "hourly_rate": obj['wage']['hourly_rate']
-                }
-            }
-        }
-        resp = self._client.labor.update_shift(id=obj['id'], body=body)
-
-        if resp.is_error():
-            raise RuntimeError(resp.errors)
-        LOGGER.info('Updated a Shift with id %s', resp.body.get('shift', {}).get('id'))
-        return resp
 
     def update_order(self, obj):
         states = ['CANCELED', 'FAILED']

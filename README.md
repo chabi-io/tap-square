@@ -21,18 +21,31 @@ This tap:
     * ModifierLists
     * Inventories
     * Orders
-    * Shifts
+    * Timecards
     * CashDrawerShifts
     * Customers
 
 * Includes a schema for each resource reflecting most recent tested data retrieved using the api. See [the schema folder](https://github.com/singer-io/tap-square/tree/master/tap_square/schemas) for details.
+
+### Square SDKs / Shifts → Timecards
+
+This tap installs **two** Square Python SDK packages side by side:
+
+* `squareup_legacy` (imported as `square_legacy`) — used for every stream except Timecards.
+* `squareup` (the rewritten SDK, imported as `square`) — used **only** for the `timecards` stream.
+
+The Labor API's `Timecard` is the successor to the now-removed `Shift`. Square deprecated the
+Shifts API on 2025-05-21 and **retired** it on 2026-05-21 (the endpoints now return `410 GONE`),
+so the former `shifts` stream has been removed. `Timecards` replicates the same underlying
+records (same IDs) via the new SDK's `SearchTimecards` endpoint. Any downstream connection that
+previously selected `shifts` must select `timecards` instead.
 * Some streams incrementally pull data based on the previously saved state. See the [bookmarking strategy](#bookmarking-strategy) section for more details.
 
 ## Bookmarking Strategy
 
 The Square API for some objects supports a `begin_time` parameter that limits the query to only return objects with a `created_at` after the `begin_time`. For an example see [Square's list payments api documentation](https://developer.squareup.com/reference/square/payments-api/list-payments). Others support searching and sorting by custom fields and this tap bookmarks using the `updated_at` field in those cases. For example, see [Square's search orders api documentation](https://developer.squareup.com/reference/square/orders-api/search-orders).
 
-Finally, some apis do not support incremental search, but to limit data volume output by the tap the tap queries for all and then filters out by the `updated_at` field. The [shifts stream](https://github.com/singer-io/tap-square/blob/42fbca80e22f0f292fa5202e9eaccb193ba7ea62/tap_square/streams.py#L207) is one such example.
+Finally, some apis do not support incremental search, but to limit data volume output by the tap the tap queries for all (sorted ascending by `updated_at`) and then filters out by the `updated_at` field. The `timecards` stream is one such example.
 
 Some apis allow sorting based on the `updated_at` value while others do not. If sorting is not supported one can only use the maximum `updated_at` value if and only if the stream has completly synced. To bookmark progress during the sync of a
 stream the `cursor` value is saved and used to paginate through the API

@@ -36,7 +36,7 @@ if __name__ == "__main__":
         # 'payments',  # GET - DONE | CREATE - DONE | UPDATE - DONE | DELETE -
         # 'refunds',  # GET - DONE | CREATE - DONE | UPDATE - NA  | DELETE -
         # 'orders'  # GET - DONE | CREATE - DONE | UPDATE - DONE  | DELETE -
-        # 'shifts'  # GET - DONE | CREATE - DONE | UPDATE - DONE  | DELETE -
+        # 'timecards'  # GET only - not creatable/updatable via the test client
     ]
     print("********** Testing basic functions of test client **********")
     if test_gets:

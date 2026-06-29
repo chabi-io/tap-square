@@ -2,7 +2,10 @@ from datetime import timedelta
 import urllib.parse
 import json
 import requests
-from square.client import Client
+from square_legacy.client import Client
+from square import Square
+from square.environment import SquareEnvironment
+from square.core.api_error import ApiError
 from singer import utils
 import singer
 import backoff
@@ -30,6 +33,16 @@ def should_not_retry(ex):
        ex.response.status_code in {400, 401}:
         return True
     return False
+
+
+def should_giveup_api_error(ex):
+    """
+    Giveup predicate for the new Square SDK, which raises `ApiError` on non-2xx
+    responses. We retry only rate-limit (429) and server (5xx) errors and give up
+    on everything else (e.g. 400/401/403/410).
+    """
+    code = getattr(ex, "status_code", None)
+    return not (code == 429 or (code is not None and code >= 500))
 
 
 def log_backoff(details):
@@ -87,6 +100,13 @@ class SquareClient():
 
         self._access_token = self._get_access_token(config, config_path)
         self._client = Client(access_token=self._access_token, environment=self._environment)
+
+        # The Timecards (Labor API) endpoint only exists in the rewritten Square SDK, so we
+        # keep a second client built from the new SDK alongside the legacy one. It reuses the
+        # same access token obtained above.
+        new_sdk_environment = (SquareEnvironment.SANDBOX if self._environment == 'sandbox'
+                               else SquareEnvironment.PRODUCTION)
+        self._new_client = Square(token=self._access_token, environment=new_sdk_environment)
 
     def _get_access_token(self, config, config_path):
         '''
@@ -155,6 +175,22 @@ class SquareClient():
                 raise RuntimeError(error_message)
 
         return result
+
+    @staticmethod
+    @backoff.on_exception(
+        backoff.expo,
+        ApiError,
+        max_time=600, # seconds
+        giveup=should_giveup_api_error,
+        on_backoff=log_backoff,
+        jitter=backoff.full_jitter,
+    )
+    def _retryable_new_sdk_call(call):
+        '''
+        Invokes a new-SDK call (a zero-arg callable). The new SDK raises `ApiError`
+        on non-2xx responses; retryable ones (429/5xx) are retried with backoff.
+        '''
+        return call()
 
     def _get_v2_objects(self, request_timer_suffix, request_method, body, body_key):
         cursor = body.get('cursor', '__initial__')
@@ -277,24 +313,39 @@ class SquareClient():
             body,
             'counts')
 
-    def get_shifts(self, bookmarked_cursor):
-        body = {
-            "query": {
-                "sort": {
-                    "field": "UPDATED_AT",
-                    "order": "ASC"
-                }
+    def get_timecards(self):
+        '''
+        Yields pages of Timecard records (Labor API), sorted ascending by `updated_at`.
+
+        Timecards are only available in the new Square SDK, so this uses `self._new_client`
+        and its exception-based error handling rather than the legacy `_get_v2_objects`
+        helper. Pagination is driven manually via the `cursor` request param / response field,
+        mirroring the legacy cursor pattern. Each page is yielded as a `(records, cursor)`
+        tuple to match the interface the streams layer expects.
+        '''
+        query = {
+            "sort": {
+                "field": "UPDATED_AT",
+                "order": "ASC"
             }
         }
 
-        if bookmarked_cursor:
-            body['cursor'] = bookmarked_cursor
+        cursor = '__initial__' # initial value so the while loop is always entered once
+        while cursor:
+            # The API needs either a valid cursor or None on the first request
+            call_cursor = None if cursor == '__initial__' else cursor
 
-        yield from self._get_v2_objects(
-            'shifts',
-            lambda bdy: self._client.labor.search_shifts(body=bdy),
-            body,
-            'shifts')
+            with singer.http_request_timer('GET timecards'):
+                result = self._retryable_new_sdk_call(
+                    lambda cur=call_cursor: self._new_client.labor.search_timecards(
+                        query=query,
+                        limit=200,
+                        cursor=cur,
+                    )
+                )
+
+            cursor = result.cursor
+            yield ([timecard.dict() for timecard in (result.timecards or [])], cursor)
 
 
     def get_loyalty_accounts(self, bookmarked_cursor):
@@ -312,17 +363,19 @@ class SquareClient():
             'loyalty_accounts')
 
 
-    def get_refunds(self, start_time, bookmarked_cursor):
+    def get_refunds(self, start_time):
+        # Filter and sort on `updated_at` so the stream can replicate incrementally.
+        # Move the bookmark back the smallest unit possible because the
+        # updated_at_begin_time query param is treated as exclusive.
         start_time = utils.strptime_to_utc(start_time)
         start_time = start_time - timedelta(milliseconds=1)
         start_time = utils.strftime(start_time)
 
         body = {
+            'updated_at_begin_time': start_time,
+            'sort_field': 'UPDATED_AT',
+            'sort_order': 'ASC',
         }
-        body['begin_time'] = start_time
-
-        if bookmarked_cursor:
-            body['cursor'] = bookmarked_cursor
 
         yield from self._get_v2_objects(
             'refunds',
