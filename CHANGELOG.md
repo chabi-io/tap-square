@@ -5,6 +5,7 @@
 * Adds the `timecards` stream (Square Labor API `SearchTimecards`).
 * **Removes the `shifts` stream.** Square retired the Shifts API on 2026-05-21 (endpoints now return `410 GONE`); `timecards` is its successor and replicates the same records.
 * Upgrades the Square SDK: installs the rewritten `squareup` (44.1.0.20260520, used for `timecards`) alongside `squareup_legacy` (41.0.0.20250319, used for all other streams).
+* Fixes OAuth token refresh for the upgraded SDK: `retrieve_token_status()` now takes no arguments and authenticates via the client's configured access token (previously the authorization header was passed positionally, which raised `TypeError`).
 * Changes the `refunds` stream from `FULL_TABLE` to `INCREMENTAL` on `updated_at`, using the ListPaymentRefunds `updated_at_begin_time` filter and `UPDATED_AT` sort.
 
 ## [v2.3.2](2025-09-02)

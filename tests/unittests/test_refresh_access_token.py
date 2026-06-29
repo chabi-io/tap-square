@@ -1,7 +1,9 @@
+import inspect
 import unittest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
 from singer import utils
+from square_legacy.api.o_auth_api import OAuthApi
 from tap_square.client import require_new_access_token, SquareClient
 
 REFRESH_TOKEN_BEFORE = 22
@@ -27,6 +29,10 @@ class TestRequireNewAccessToken(unittest.TestCase):
         )
         result = require_new_access_token(self.access_token, self.client)
         self.assertFalse(result)
+        # retrieve_token_status authenticates via the client's configured token and
+        # must be called with no arguments (passing the authorization header raises
+        # TypeError against the real SDK).
+        self.client.o_auth.retrieve_token_status.assert_called_once_with()
 
     @patch('singer.http_request_timer')
     def test_access_token_older_than_7_days(self, mock_timer):
@@ -152,3 +158,28 @@ class TestGetAccessToken(unittest.TestCase):
 
         self.assertIn('Invalid credentials', str(context.exception))
         mock_client_instance.o_auth.obtain_token.assert_called_once()
+
+
+class TestOAuthApiContract(unittest.TestCase):
+    '''
+    Guards against SDK signature drift in the OAuth methods the tap calls. The
+    legacy SDK (squareup_legacy 41.x) changed `retrieve_token_status` to take no
+    positional arguments (it authenticates via the client's configured token);
+    earlier versions required the authorization header as an argument. These tests
+    use the real SDK so a future SDK bump that changes the contract is caught here
+    rather than at runtime (the mocked tests above cannot detect this).
+    '''
+
+    def test_retrieve_token_status_takes_no_positional_args(self):
+        params = [
+            p for name, p in inspect.signature(OAuthApi.retrieve_token_status).parameters.items()
+            if name != 'self'
+        ]
+        self.assertEqual([], params)
+
+    def test_obtain_token_takes_body(self):
+        params = [
+            name for name in inspect.signature(OAuthApi.obtain_token).parameters
+            if name != 'self'
+        ]
+        self.assertEqual(['body'], params)

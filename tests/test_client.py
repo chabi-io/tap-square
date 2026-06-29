@@ -47,10 +47,10 @@ def require_new_access_token(access_token, client):
     if not access_token:
         return True
 
-    authorization = f'Bearer {access_token}'
-
+    # `retrieve_token_status` authenticates with the access token configured on the
+    # client, so `client` must be built with the token being checked.
     with singer.http_request_timer('Check access token expiry'):
-        response = client.o_auth.retrieve_token_status(authorization)
+        response = client.o_auth.retrieve_token_status()
 
     if response.is_error():
         error_message = response.errors if response.errors else response.body
@@ -127,7 +127,9 @@ class TestClient():
         Otherwise, it will return the cached access token.
         '''
         access_token = os.getenv('TAP_SQUARE_ACCESS_TOKEN')
-        client = Client(environment=self._environment)
+        # Build the client with the cached token so the token-status check authenticates
+        # as that token; when absent, require_new_access_token short-circuits to True.
+        client = Client(access_token=access_token, environment=self._environment)
 
         # Check if the access token needs to be refreshed
         if require_new_access_token(access_token, client):

@@ -70,10 +70,11 @@ def require_new_access_token(access_token, client):
     if not access_token:
         return True
 
-    authorization = f"Bearer {access_token}"
-
+    # `retrieve_token_status` authenticates with the access token configured on the
+    # client (sent as the `Authorization: Bearer <token>` header), so `client` must
+    # be built with the token being checked. See `_get_access_token`.
     with singer.http_request_timer('Check access token expiry'):
-        response = client.o_auth.retrieve_token_status(authorization)
+        response = client.o_auth.retrieve_token_status()
 
     if response.is_error():
         error_message = response.errors if response.errors else response.body
@@ -114,7 +115,11 @@ class SquareClient():
         Otherwise, it will return the cached access token.
         '''
         access_token = config.get("access_token")
-        client = Client(environment=self._environment)
+        # Build the client with the cached access token so the token-status check can
+        # authenticate as that token. When there is no cached token, `require_new_access_token`
+        # short-circuits to True and only `obtain_token` (which authenticates via the request
+        # body) is used.
+        client = Client(access_token=access_token, environment=self._environment)
 
         # Check if the access token needs to be refreshed
         if require_new_access_token(access_token, client):
