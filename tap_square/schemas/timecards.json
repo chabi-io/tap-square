@@ -145,6 +145,32 @@
             "null",
             "string"
           ]
+        },
+        "tip_eligible": {
+          "type": [
+            "null",
+            "boolean"
+          ]
+        }
+      }
+    },
+    "declared_cash_tip_money": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "amount": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "currency": {
+          "type": [
+            "null",
+            "string"
+          ]
         }
       }
     },

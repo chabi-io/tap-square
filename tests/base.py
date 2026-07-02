@@ -63,7 +63,7 @@ class TestSquareBaseParent:
             'customers': 100,
             'modifier_lists': DEFAULT_BATCH_LIMIT,
             'orders': 500,
-            'shifts': 200,
+            'timecards': 200,
         }
 
         def setUp(self):
@@ -224,9 +224,10 @@ class TestSquareBaseParent:
                 },
                 "refunds": {
                     self.PRIMARY_KEYS: {'id'},
-                    self.REPLICATION_METHOD: self.FULL,
+                    self.REPLICATION_METHOD: self.INCREMENTAL,
+                    self.REPLICATION_KEYS: {'updated_at'}
                 },
-                "shifts": {
+                "timecards": {
                     self.PRIMARY_KEYS: {'id'},
                     self.REPLICATION_METHOD: self.INCREMENTAL,
                     self.REPLICATION_KEYS: {'updated_at'}
@@ -283,7 +284,7 @@ class TestSquareBaseParent:
                 'cash_drawer_shifts',  # Require cash transactions (not supported by API)
                 'payouts',  # Depenedent on bank_account related transactions, no endpoints for CREATE or UPDATE
                 'item',
-                'shifts',
+                'timecards',  # Requires clock-in/out flow not creatable via the sandbox API
                 'team_members'  # Only 1 record present
             }
 

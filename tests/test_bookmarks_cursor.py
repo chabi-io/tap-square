@@ -16,10 +16,10 @@ class TestSquareIncrementalReplicationCursor(TestSquareBaseParent.TestSquareBase
             self.expected_full_table_streams()).difference(
                 self.untestable_streams())
 
-        # Shifts have cursor bookmarks because the api doesn't
-        # support incremental queries, but we fake it being
-        # incremental
-        all_testable_streams.add('shifts')
+        # NB: The former Shifts stream was added here because it used cursor
+        # bookmarks while faking incremental replication. Its replacement,
+        # Timecards, replicates incrementally on `updated_at` (not a cursor
+        # bookmark), so it is intentionally not included in this test.
 
         return all_testable_streams
 
