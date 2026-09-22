@@ -275,8 +275,19 @@ class Timecards(Stream):
     Shifts API on 2026-05-21). SearchTimecards returns the same underlying resources
     (same record IDs) as the old SearchShifts endpoint.
 
-    Records are returned sorted ascending by `updated_at`, so writing the running-max
-    `updated_at` bookmark after each page is safe for mid-sync resumption.
+    SearchTimecards can sort by `updated_at` but cannot filter on it, so every sync has to
+    page through the whole collection. Two orderings are used, with different bookmarking
+    rules:
+
+    - First run (no bookmark): page ASC. The running max `updated_at` is a true watermark
+      -- everything at or below it has been emitted -- so the bookmark can be written after
+      each page and the sync can resume from a partial run.
+    - Later runs (bookmark present): page DESC and stop at the first record older than the
+      bookmark, so the full history isn't re-read. Here the first page holds the newest
+      records, so the running max reaches its final value immediately, before the older
+      records on later pages have been written. Bookmarking per page would let a failure
+      partway through commit a watermark covering records that were never emitted, so the
+      bookmark is written only once the loop has run to completion.
     '''
     tap_stream_id = 'timecards'
     key_properties = ['id']
@@ -285,20 +296,37 @@ class Timecards(Stream):
     replication_key = 'updated_at'
 
     def sync(self, state, stream_schema, stream_metadata, config, transformer):
-        start_time = singer.get_bookmark(state, self.tap_stream_id, self.replication_key, config['start_date'])
+        bookmark = singer.get_bookmark(state, self.tap_stream_id, self.replication_key)
+        start_time = bookmark or config['start_date']
         max_record_value = start_time
+        order = "DESC" if bookmark else "ASC"
 
-        for page, _ in self.client.get_timecards():
+        for page, _ in self.client.get_timecards(order):
+            done = False
             for record in page:
-                if record[self.replication_key] >= start_time:
-                    transformed_record = transformer.transform(record, stream_schema, stream_metadata)
+                # Transform before comparing: the bookmark is stored from the transformed
+                # value, which singer normalizes to microsecond precision, so comparing a
+                # raw `updated_at` against it would compare two timestamp formats.
+                transformed_record = transformer.transform(record, stream_schema, stream_metadata)
+                if transformed_record[self.replication_key] >= start_time:
                     singer.write_record(
                         self.tap_stream_id,
                         transformed_record,
                     )
-                    if record[self.replication_key] > max_record_value:
+                    if transformed_record[self.replication_key] > max_record_value:
                         max_record_value = transformed_record[self.replication_key]
+                elif order == "DESC":
+                    # Sorted descending, so every remaining record is older still.
+                    done = True
+                    break
 
+            if order == "ASC":
+                state = singer.write_bookmark(state, self.tap_stream_id, self.replication_key, max_record_value)
+                singer.write_state(state)
+            if done:
+                break
+
+        if order == "DESC":
             state = singer.write_bookmark(state, self.tap_stream_id, self.replication_key, max_record_value)
             singer.write_state(state)
         return state

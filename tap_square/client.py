@@ -318,9 +318,11 @@ class SquareClient():
             body,
             'counts')
 
-    def get_timecards(self):
+    def get_timecards(self, order="ASC"):
         '''
-        Yields pages of Timecard records (Labor API), sorted ascending by `updated_at`.
+        Yields pages of Timecard records (Labor API), sorted by `updated_at` in `order`
+        ("ASC" or "DESC"). The endpoint can sort on `updated_at` but cannot filter on it,
+        so callers bound the result themselves -- see the `Timecards` stream.
 
         Timecards are only available in the new Square SDK, so this uses `self._new_client`
         and its exception-based error handling rather than the legacy `_get_v2_objects`
@@ -331,7 +333,7 @@ class SquareClient():
         query = {
             "sort": {
                 "field": "UPDATED_AT",
-                "order": "ASC"
+                "order": order
             }
         }
 
